@@ -19,7 +19,7 @@
     },
     "autoload": {
         "files": [
-            "src/function/helpers.php"
+            "src/func/helpers.php"
         ]
     },
     "minimum-stability": "dev"
