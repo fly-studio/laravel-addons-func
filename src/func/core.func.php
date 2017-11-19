@@ -9,25 +9,25 @@
  * @return bool The boolean equivalent or null
  */
 if(! function_exists('boolval')) {
-function boolval($in, $strict = FALSE) 
+function boolval($in, $strict = false)
 {
-	$out = NULL;
+	$out = null;
 	// if not strict, we only have to check if something is false
-	$false_array = array('false', 'False', 'FALSE', 'no', 'No', 'n', 'N', '0', 'off', 'Off', 'OFF', FALSE, 0);
-	!$strict && $false_array[] = NULL;// 严格模式,NULL返回NULL
-	if (in_array($in,  $false_array, TRUE))
+	$false_array = array('false', 'False', 'FALSE', 'no', 'No', 'n', 'N', '0', 'off', 'Off', 'OFF', false, 0);
+	!$strict && $false_array[] = null;// 严格模式,null返回null
+	if (in_array($in,  $false_array, true))
 	{
-		$out = FALSE;
+		$out = false;
 	} else if ($strict) {
 		// if strict, check the equivalent true values
 		if (in_array($in, array('true', 'True', 'TRUE', 'yes', 'Yes', 'y', 'Y', '1', 'on', 'On', 'ON', TRUE, 1), TRUE))
 		{
-			$out = TRUE;
+			$out = true;
 		}
 	} else {
 		// not strict? let the regular php bool check figure it out (will
 		//     largely default to true)
-		$out = $in ? TRUE : FALSE;
+		$out = $in ? true : false;
 	}
 	return $out;
 }
@@ -39,12 +39,12 @@ function get_type($var) {
 	if (is_bool($var)) return 'boolean';
 	if (is_float($var)) return 'float';
 	if (is_int($var)) return 'integer';
-	if (is_null($var)) return 'NULL';
+	if (is_null($var)) return 'null';
 	if (is_numeric($var)) return 'numeric';
 	if (is_object($var)) return 'object';
 	if (is_resource($var)) return 'resource';
 	if (is_string($var)) return 'string';
-	return FALSE;
+	return false;
 }
 }
 
@@ -85,10 +85,10 @@ function set_property($class, $variant, $value)
 {
 	if (!is_object($class)) throw new Exception('paramater #0 must be an object\'s instance.', 1);
 
-    $property = (new ReflectionClass($class))->getProperty($variant);
-    $property->setAccessible(true);
+	$property = (new ReflectionClass($class))->getProperty($variant);
+	$property->setAccessible(true);
 
-    return $property->setValue($class, $value);
+	return $property->setValue($class, $value);
 }
 }
 
@@ -104,11 +104,11 @@ if (! function_exists('get_property')) {
 function get_property($class, $variant)
 {
 	if (!is_object($class)) throw new Exception('paramater #0 must be an object\'s instance.', 1);
-	
-    $property = (new ReflectionClass($class))->getProperty($variant);
-    $property->setAccessible(true);
 
-    return $property->getValue($class);
+	$property = (new ReflectionClass($class))->getProperty($variant);
+	$property->setAccessible(true);
+
+	return $property->getValue($class);
 }
 }
 
@@ -126,10 +126,10 @@ function call_class_method_array($class, $method, $parameters)
 {
 	if (!is_object($class)) throw new Exception('paramater #0 must be an object\'s instance.', 1);
 
-    $reflectionMethod = (new ReflectionClass($class))->getMethod($method);
-    $reflectionMethod->setAccessible(true);
+	$reflectionMethod = (new ReflectionClass($class))->getMethod($method);
+	$reflectionMethod->setAccessible(true);
 
-    return $reflectionMethod->invokeArgs($class, $parameters);
+	return $reflectionMethod->invokeArgs($class, $parameters);
 }
 }
 
@@ -147,9 +147,9 @@ function call_class_method($class, $method, ...$parameters)
 {
 	if (!is_object($class)) throw new Exception('paramater #0 must be an object\'s instance.', 1);
 
-    $reflectionMethod = (new ReflectionClass($class))->getMethod($method);
-    $reflectionMethod->setAccessible(true);
+	$reflectionMethod = (new ReflectionClass($class))->getMethod($method);
+	$reflectionMethod->setAccessible(true);
 
-    return $reflectionMethod->invokeArgs($class, $parameters);
+	return $reflectionMethod->invokeArgs($class, $parameters);
 }
 }
