@@ -1,35 +1,71 @@
 <?php
 
 /**
- * 本文件中所有转换函数只支持utf-8、ansi
- * ansi一般指gbk、big5等双字节字符串，在字体设计上，这类字符会处理为双宽度（相比英文）
- * utf-8一律需要处理为non BOM
- * @author Fly Mirage <no email>
+ * 字符编码解释
+ * - 所有函数中的字符串参数都需要去掉BOM，除了removeBOM外
+ * - 所有转换函数只支持utf-8、ansi
  *
- */
-
-
-
-/**
- * 按UTF-8分隔为数组，效率比MB_Substr高
+ * @example
+ * ANSI 一般指gbk、big5等双字节字符串，占用2bytes
+ * 在【字体】设计上，这类字符会处理为双宽度（相比英文）
+ *
+ * @example
+ * utf-8 变长 1~6 bytes
+ * 其中2003年规范utf-8长度在 1~4 bytes之间
  * 0xxxxxxx
  * 110xxxxx 10xxxxxx
  * 1110xxxx 10xxxxxx 10xxxxxx
  * 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
- * 111110xx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
- * 1111110x 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx
+ * 111110xx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx (废弃)
+ * 1111110x 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx 10xxxxxx (废弃)
+ *
+ * @example
+ * utf-16
+ * 狭义上 unicode == utf-16 == ucs-2
+ * 2 bytes、4 bytes
+ * https://zh.wikipedia.org/wiki/UTF-16
+ *
+ * 注意:
+ * utf-16 与 ucs-2，UTF-16可看成是UCS-2的父集，对于2bytes的区域，他们完全相同，但当引入辅助平面字符后(unicode 2.0)，也就是4bytes，就称为UTF-16了。
+ *
+ * 【utf-16 辅助平面字符】
+ * 4bytes，一些特殊的汉字、Emoj分布在辅助平面字符，辅助平面中的码位从U+10000到U+10FFFF，共计FFFFF个，即2^20=1,048,576个
+ * 在utf-16中规定，辅助平面字符是一个2bytes+2bytes的组合，其中前2bytes字节必须在D800-DBFF内，后2bytes必须在DC00-DFFF内
+ * 高位代理（现称：前导代理 lead surrogates）: D800-DBFF
+ * 低位代理（现称：后尾代理 trail surrogates）: DC00-DFFF
+ * 在UCS-2的时代，U+D800..U+DFFF内的值被占用，用于表示字符(可能是藏文)，所以需要检查后面的低位字符是否构成配对，不过这是1996年前(unicode2.0之前)的事情。
+ *
+ * @example
+ * UCS 通用字符集（Universal Character Set)
+ * ucs并不是字符编码格式，而是代表一个集合，它基本和utf-16一致
+ * 其中ucs和utf-16的区别可以理解为，utf-16表示4bytes的字符必须使用辅助平面字符的高低代理，而ucs则将这些字符直接隐射到U+10000到U+10FFFF中
+ * 高低代理转换到ucs算法在 utf16_ucs_code ucs_utf16_code
+ *
+ * @example
+ * utf-32  == UCS-4 4bytes
+ * https://zh.wikipedia.org/wiki/UTF-32
+ * 注意：utf-32永远是4bytes，但是位于utf-16中的高低代理字符，则表示为U+10000到U+10FFFF，同UCS，转换算法见utf16_ucs_code
+ *
+ * @author Fly Mirage <no email>
+ *
+ */
+
+if (! function_exists('str_split_utf8')) {
+/**
+ * 按UTF-8转换为自然字数组，效率比mb_substr高
+ *
+
  *
  * @param string $str 输入utf-8字符串
  * @return array 返回成一段数组
  */
-if (! function_exists('str_split_utf8')) {
-function str_split_utf8($str)
+function str_split_utf8(string $str)
 {
-	return preg_match_all('/./u', removeBOM($str), $out) ? $out[0] : FALSE;
+	return preg_match_all('/./us', removeBOM($str), $out) ? $out[0] : false;
 	/*
 	// place each character of the string into and array
 	$split = 1;
-	$array = array(); $len = strlen($str);
+	$array = []; $len = strlen($str);
 	for ( $i = 0; $i < $len; ){
 		$value = ord($str[$i]);
 		if($value > 0x7F){
@@ -58,14 +94,16 @@ function str_split_utf8($str)
 }
 }
 
+if (! function_exists('str_split_multibyte')) {
 /**
- * 按多字节分隔为数组，效率比MB_Substr高
+ * 按ANSI多字节分割为自然字的数组，效率比mb_substr高
+ * 多字节是Windows使用的默认编码格式，根据不同地区，编码格式不同
+ * 这里支持中文GB2312/GB18030/GBK/BIG5和一些日文、韩文的主要编码格式，
  *
  * @param string $str 输入utf-8字符串
  * @return array 返回成一段数组
  */
-if (! function_exists('str_split_multibyte')) {
-function str_split_multibyte($str, $encode = 'GBK')
+function str_split_multibyte(string $str, string $encode = 'GBK')
 {
 
 	$encode = encoding_aliases($encode);
@@ -168,127 +206,404 @@ function str_split_multibyte($str, $encode = 'GBK')
 			break;
 
 
-
-
 		default:
 			return str_split($str);
 	}
-	return preg_match_all($pattern, $str, $out) ? $out[0] : FALSE;
-}
-}
-
-if (! function_exists('str_split_unicode')) {
-function str_split_unicode($str)
-{
-	return preg_match_all('/.{2}/', removeBOM($str), $out) ? $out[0] : FALSE;
+	return preg_match_all($pattern, $str, $out) ? $out[0] : false;
 }
 }
 
 if (! function_exists('str_split_utf16')) {
-function str_split_utf16($str)
+/**
+ * UTF-16 2/4bytes
+ * 将UTF-16按自然字分割成数组，
+ *
+ * 高区D800~DBFF的字会正确的分割成4bytes
+ *
+ * 由于utf-16编码必须要用BOM标识才能显示，但是这里取出的数组是自然字，无bom，这些字将无法在界面上显示
+ *
+ * @param  string $str
+ * @return array
+ */
+function str_split_utf16(string $str)
 {
-	return str_split_unicode($str);
+	$str = removeBOM($str);
+
+	$output = [];
+	$size = strlen($str);
+
+	if ($size % 2 !== 0) throw new \Exception('String must be unicode(ucs-2/utf-16)');
+
+	$i = 0;
+	while($i + 1 < $size) {
+		// $str[0] << 8 + str[1]
+		$code = (ord($str[$i]) << 8) + ord($str[$i + 1]);
+		$i += 2;
+		// 高位, 当我们遇到两个字节，发现它的码点在U+D800~U+DBFF之间，就可以断定，
+		// 紧跟在后面的两个字节的码点，应该在U+DC00到U+DFFF之间，这四个字节必须放在一起解读。
+		// high surrogate, and there is a next character
+		if ($code >= 0xD800 && $code <= 0xDBFF && ($i + 1 < $size))
+		{
+			// 低位
+			// $str[2] << 8 + $str[3]
+			$extra = (ord($str[$i]) << 8) + ord($str[$i + 1]);
+
+			// DC00 ~ DFFF 这里是用的位运算，比对比大小的效率要高
+			// DC00 = 1101 1100 0000 0000
+			// DFFF = 1101 1111 1111 1111
+			if (($extra & 0xDC00) == 0xDC00) { // low surrogate
+				$i += 2;
+
+				$output[] =  pack('N', $code << 16 | $extra);
+			} else
+				// 说明低位无法匹配，可能是一个用于ucs-2时代的字
+				// unmatched surrogate; only append this code unit, in case the next
+				// code unit is the high surrogate of a surrogate pair
+				$output[] = pack('n', $code);
+		} else
+			$output[] = pack('n', $code);
+	}
+	return $output;
+}
+}
+
+if (! function_exists('str_split_unicode')) {
+/**
+ * str_split_utf16的别名
+ * 因为现在操作系统大部分使用的是utf-16编码，所以这里将unicode归为utf16
+ *
+ * @param  string $str
+ * @return array
+ */
+function str_split_unicode(string $str)
+{
+	return str_split_utf16($str);
 }
 }
 
 if (! function_exists('str_split_utf32')) {
-function str_split_utf32($str)
+/**
+ * Utf-32 4bytes长度
+ * 将utf-32的字符串按自然字分割成数组
+ * 由于utf-32编码必须要用BOM标识才能显示，但是这里取出的数组是自然字，无bom，这些字将无法在界面上显示
+ *
+ * @param  string $str
+ * @return array
+ */
+function str_split_utf32(string $str)
 {
-	return preg_match_all('/.{4}/', removeBOM($str), $out) ? $out[0] : FALSE;
+	return preg_match_all('/.{4}/', removeBOM($str), $out) ? $out[0] : false;
 }
 }
 
-if (! function_exists('str_split_ucs2')) {
-function str_split_ucs2($str)
+if (! function_exists('utf16_ucs_code')) {
+/**
+ * utf16码转换为ucs码，也可以用于utf16到utf32的转换
+ * 算法: http://scripts.sil.org/cms/scripts/page.php
+ *
+ * @param  int    $codepage
+ * @return int
+ */
+function utf16_ucs_code(int $codepage)
 {
-	$output = [];
-	$size = strlen($str);
-	if ($size % 2 !== 0) throw new \Exception('String must be unicode(ucs-2)');
-	$i = 0;
-	while($i + 1 < $size) {
-		$code = (ord($str{$i}) << 8) + ord($str{$i + 1});
-		$i += 2;
-		// high surrogate, and there is a next character
-		if ($code >= 0xD800 && $code <= 0xDBFF && ($i + 1 < $size))
-		{
-			$extra = (ord($str{$i}) << 8) + ord($str{$i + 1});
-			if (($extra & 0xFC00) == 0xDC00) { // low surrogate
-				$i += 2;
-				$output[] = ((($code & 0x3FF) << 10) + ($extra & 0x3FF) + 0x10000);
-			} else
-				// unmatched surrogate; only append this code unit, in case the next
-				// code unit is the high surrogate of a surrogate pair
-				$output[] = $code;
-		} else
-			$output[] = $code;
+	// 0x0 ~ 0xd7ff 0xe000 ~ 0xffff
+	if ($codepage <= 0xd7ff || ($codepage >= 0xe000 && $codepage <= 0xffff))
+		return $codepage;
+	// utf-16中是不可能会有0x10000-0x10ffff字符，但是为了容错，这里直接返回
+	else if ($codepage <= 0x10ffff)
+		return $codepage;
+
+	// 0xd800 ~ 0xdbff 0xdc00~0xffff to 0x10000 ~ 0x10ffff
+	$code = $codepage >> 16;
+	$extra = $codepage & 0xffff;
+
+	return ($code - 0xD800) * 0x400 + ($extra - 0xDC00) + 0x10000;
+}
+}
+
+if (! function_exists('ucs_utf16_code')) {
+/**
+ * ucs码转换为utf16码，也可以用于utf32到utf16的转换
+ * 算法: http://scripts.sil.org/cms/scripts/page.php
+ *
+ * @param  int    $codepage
+ * @return int
+ */
+function ucs_utf16_code(int $codepage)
+{
+	// 0x0 ~ 0xd7ff 0xe000 ~ 0xffff
+	if ($codepage <= 0xd7ff || ($codepage >= 0xe000 && $codepage <= 0xffff))
+		return $codepage;
+	// UCS中目前没有字符超过x10ffff，但是为了容错，	这里直接返回
+	elseif ($codepage > 0x10ffff)
+		return $codepage;
+
+	// 0x10000 ~ 0x10ffff to 0xd800 ~ 0xdbff 0xdc00~0xffff
+	$lead = intval(($codepage - 0x10000) / 0x400) + 0xd800;
+	$trail = ($codepage - 0x10000) % 0x400 + 0xdc00;
+
+	return $lead << 16 | $trail;
+}
+}
+
+if (! function_exists('ucs_utf8_code')) {
+/**
+ * ucs码转换utf8码
+ * 1~6位算法： http://tidy.sourceforge.net/cgi-bin/lxr/source/src/utf8.c#L342
+ * 注意: 2003年之后规范utf-8不会超过4位，
+ *
+ *
+ * @param  int    $codepage
+ * @return int
+ */
+function ucs_utf8_code(int $codepage) {
+	$symbol = 0;
+
+	//0 ~ 0x0080
+	if ($codepage < 0x0080) { // 1-byte sequence
+		return $codepage;
+	// 0x0080 ~ 0x7f00
+	} else if ($codepage < 0x0800) { // 2-byte sequence
+		$symbol = ((($codepage >> 6) & 0x1F) | 0xC0) << 8;
+	//0x0800 ~ 0xd7ff 0xe000 ~ x0ffff
+	} else if ($codepage <= 0xd7ff || ($codepage >= 0xe000 && $codepage <= 0xffff)) { // 3-byte sequence
+		$symbol = (($codepage >> 12) & 0x0F | 0xE0) << 16;
+		$symbol |= _create_utf8_byte($codepage, 6) << 8;
+	//0x10000 ~ 0x10ffff
+	} else if ($codepage <= 0x10ffff) { // 4-byte sequence
+		$symbol = (($codepage >> 18) & 0x07 | 0xF0) << 24;
+		$symbol |= _create_utf8_byte($codepage, 12) << 16;
+		$symbol |= _create_utf8_byte($codepage, 6) << 8;
+	} else {
+		return 0;
 	}
-	return $output;
-}
-}
+	$symbol |= ($codepage & 0x3F) | 0x80;
 
-if (! function_exists('str_join_ucs2')) {
-function str_join_ucs2($array) {
-	$size = count($array);
-	$index = -1;
-	$code;
-	$output = '';
-	while (++$index < $size) {
-		$code = $array[$index];
-		if ($code > 0xFFFF) {
-			$code -= 0x10000;
-			$output .= pack('n', (($code >> 10) & 0x3FF) | 0xD800);
-			$code = 0xDC00 | $code & 0x3FF;
-		}
-		$output .=  pack('n', $code);
-	}
-	return $output;
-}
-}
-
-if (! function_exists('ucs2_check_scalar')) {
-function ucs2_check_scalar($code) {
-	if ($code >= 0xD800 && $code <= 0xDFFF) {
-		throw new \Exception(
-			'Lone surrogate U+' . dechex($code) .
-			' is not a scalar value'
-		);
-	}
-}
-}
-
-if (! function_exists('create_utf8_byte')) {
-function create_utf8_byte($code, $shift) {
-	return chr((($code >> $shift) & 0x3F) | 0x80);
-}
-}
-
-if (! function_exists('ucs2_code_to_utf8')) {
-function ucs2_code_to_utf8($code) {
-	if (($code & 0xFFFFFF80) == 0) // 1-byte sequence
-		return chr($code);
-
-	$symbol = '';
-	if (($code & 0xFFFFF800) == 0) { // 2-byte sequence
-		$symbol = chr((($code >> 6) & 0x1F) | 0xC0);
-	} else if (($code & 0xFFFF0000) == 0) { // 3-byte sequence
-		ucs2_check_scalar($code);
-		$symbol = chr((($code >> 12) & 0x0F) | 0xE0);
-		$symbol .= create_utf8_byte($code, 6);
-	} else if (($code & 0xFFE00000) == 0) { // 4-byte sequence
-		$symbol = chr((($code >> 18) & 0x07) | 0xF0);
-		$symbol .= create_utf8_byte($code, 12);
-		$symbol .= create_utf8_byte($code, 6);
-	}
-	$symbol .= chr(($code & 0x3F) | 0x80);
 	return $symbol;
 }
+/**
+ * 私有函数，创建utf8的某位
+ * @param  [type] $code
+ * @param  [type] $shift 第几位
+ * @return [type]
+ */
+function _create_utf8_byte(int $code, int $shift) {
+	return ($code >> $shift) & 0x3F | 0x80;
+}
 }
 
-if (! function_exists('str_split_any')) {
-function str_split_any($str, $encode = NULL)
+if (! function_exists('utf8_ucs_code')) {
+/**
+ * utf-8码转usc码，如果需要转utf-16，需要再加上ucs_utf16_code
+ *
+ * 1~6位算法： http://tidy.sourceforge.net/cgi-bin/lxr/source/src/utf8.c#L169
+ * 注意: 2003年之后规范utf-8不会超过4位
+ *
+ * @param  int    $codepage
+ * @return int
+ */
+function utf8_ucs_code(int $codepage)
 {
-	empty($encode) && $encode = mb_detect_encoding($str, 'ASCII,UTF-8,UCS-2,UCS-4,UTF-16,UTF-32');
-	$result = array();
+	$bytes = [];
+	for($i = PHP_INT_SIZE - 1; $i >= 0; $i--)
+	{
+		$offset = $i * 8;
+		$r = ($codepage & (0xff << $offset)) >> $offset;
+		if ($r > 0)
+			$bytes[] = $r;
+	}
+
+	$ch = $bytes[0]; /* first byte is passed in separately */
+
+	$n = $length = 0;
+	if ($ch <= 0x7F) /* 0XXX XXXX one byte */
+	{
+		$n = $ch;
+		$length = 1;
+	}
+	else if (($ch & 0xE0) == 0xC0)  /* 110X XXXX  two bytes */
+	{
+		$n = $ch & 31;
+		$length = 2;
+	}
+	else if (($ch & 0xF0) == 0xE0)  /* 1110 XXXX  three bytes */
+	{
+		$n = $ch & 15;
+		$length = 3;
+	}
+	else if (($ch & 0xF8) == 0xF0)  /* 1111 0XXX  four bytes */
+	{
+		$n = $ch & 7;
+		$length = 4;
+	}
+	else
+	{
+		/* 超过4位的utf-8认为无效 */
+		return $codepage;
+	}
+
+	for($i = 1; $i < $length; $i++)
+	{
+		$ch = $bytes[$i];
+		// 0xC0 = 1100 0000
+		// 0x80 = 1000 0000
+		// 是否符合utf-8的规则
+		if (($ch & 0xC0) != 0x80)
+			return $codepage;
+
+		$n = ($n << 6) | ($ch & 0x3F);
+	}
+
+	return $n;
+}
+}
+
+if (! function_exists('utf16_utf8_code')) {
+/**
+ * utf16码转换为utf8码
+ * 1~6位算法： http://tidy.sourceforge.net/cgi-bin/lxr/source/src/utf8.c#L342
+ *
+ * 注意: 2003年之后规范utf-8不会超过4位，
+ * 4bytes的UTF-16的需要先转换到0x10000~0x10ffff，转换函数为：utf16_ucs_code
+ *
+ * @param  int    $codepage
+ * @return int
+ */
+function utf16_utf8_code(int $codepage)
+{
+	$ucs = utf16_ucs_code($codepage);
+
+	return ucs_utf8_code($ucs);
+}
+}
+
+if (! function_exists('utf8_utf16_code')) {
+/**
+ * utf-8转换UTF-16
+ *
+ * @param  int $codepage
+ * @return int
+ */
+function utf8_utf16_code(int $codepage)
+{
+	return ucs_utf16_code(utf8_ucs_code($codepage));
+}
+}
+
+if (! function_exists('uchr')) {
+/**
+ * 原chr的函数只支持ascii编码，此函数可以支持int转换为一个自然字: ascii utf8 utf-16 utf-32
+ *
+ * @param  int      $codepage
+ * @param  int|null $length
+ * @return string
+ */
+function uchr(int $codepage, string $encode = 'UTF-8')
+{
+	$str = '    ';
+
+	$lenPos = -1;
+	for($i = 0; $i < 4; $i++)
+	{
+		$str[$i] = chr($ch = ($codepage & 0xff));
+
+		if ($ch != 0) $lenPos = $i;
+
+		$codepage = $codepage >> 8;
+	}
+
+	$encode = encoding_aliases($encode);
+
+	switch ($encode) {
+		case 'ASCII': // 1 bytes
+		case 'UTF-8': // 1~4 bytes
+			return strrev(substr($str, 0, $lenPos + 1));
+		case 'UTF-16': // 2/4 bytes 最少2bytes
+			return strrev(substr($str, 0, max($lenPos + 1, 2)));
+			break;
+		case 'UTF-32': // 4 bytes;
+			return strrev($str);
+	}
+}
+}
+
+if (! function_exists('uord')) {
+/**
+ * 原ord的函数只支持1个ascii字符，此函数可以支持1个自然字的ascii utf8 utf-16 utf-32
+ * 注意: 只能输入该编码的1个自然字（无BOM），对于非该自然字的额外字符会导致不可预知的结果
+ *
+ * @param  string $char
+ * @return [type]
+ */
+function uord(string $char)
+{
+	$n = 0;
+	$len = min(strlen($char), PHP_INT_SIZE);
+
+	for($i = 0; $i < $len; $i++)
+		$n = ($n << 8) | ord($char[$i]);
+
+	return $n;
+}
+}
+
+if (! function_exists('utf16_to_utf8')) {
+/**
+ * utf-16码转换UTF-8码
+ * 本函数主要是展示utf-16转换utf-8的算法
+ *
+ * @param  string $str
+ * @return string
+ */
+function utf16_to_utf8(string $str)
+{
+	$data = str_split_utf16($str);
+
+	$res = '';
+	foreach($data as $word)
+	{
+		$code = uord($word);
+
+		$utf8 = utf16_utf8_code($code);
+
+		$res .= uchr($utf8, 'utf-8');
+	}
+
+	return  $res;
+}
+}
+
+if (! function_exists('utf8_to_utf16')) {
+
+/**
+ * utf-8转换UTF-16
+ * 本函数主要是展示utf-8转换utf-16的算法，对于返回的结果会加上BOM
+ *
+ * @param  string $str
+ * @return string
+ */
+function utf8_to_utf16(string $str)
+{
+	$data = str_split_utf8($str);
+
+	$res = '';
+	foreach($data as $word)
+	{
+		$code = uord($word);
+		$utf16 = utf8_utf16_code($code);
+
+		$res .= uchr($utf16, 'UTF-16');
+	}
+	return addBOM($res, 'UTF-16');
+}
+}
+
+
+if (! function_exists('str_split_any')) {
+function str_split_any($str, $encode = null)
+{
+	empty($encode) && $encode = mb_detect_encoding($str, 'ASCII,UTF-8,UTF-16,UTF-32');
+	$result = [];
 
 	$encode = encoding_aliases($encode);
 	switch ($encode) {
@@ -302,7 +617,6 @@ function str_split_any($str, $encode = NULL)
 		case 'UTF-16':
 		case 'UTF-16LE':
 		case 'UTF-16BE':
-		case 'UCS-2':
 		case 'UCS-2LE':
 		case 'UCS-2BE':
 			$result = str_split_utf16($str);
@@ -310,7 +624,6 @@ function str_split_any($str, $encode = NULL)
 		case 'UTF-32':
 		case 'UTF-32LE':
 		case 'UTF-32BE':
-		case 'UCS-4':
 		case 'UCS-4LE':
 		case 'UCS-4BE':
 			$result = str_split_utf32($str);
@@ -413,24 +726,9 @@ function encoding_aliases($encode)
 		case 'binary': //binary
 			$_encode = '8bit';
 			break;
-		case 'ucs-4': //UCS-4
-		case 'iso-10646-ucs-4': //ISO-10646-UCS-4
-		case 'ucs4': //UCS4
-			$_encode = 'UCS-4';
-			break;
-		case 'ucs-4be': //UCS-4BE
-		case 'ucs4be': //UCS-4BE
-			$_encode = 'UCS-4BE';
-			break;
 		case 'ucs-4le': //UCS-4LE
 		case 'ucs4le': //UCS-4LE
 			$_encode = 'UCS-4LE';
-			break;
-		case 'ucs-2': //UCS-2
-		case 'iso-10646-ucs-2': //ISO-10646-UCS-2
-		case 'ucs2': //UCS2
-		case 'unicode': //UNICODE
-			$_encode = 'UCS-2';
 			break;
 		case 'ucs-2be': //UCS-2BE
 		case 'ucs2be': //UCS-2BE
@@ -440,10 +738,15 @@ function encoding_aliases($encode)
 		case 'ucs2le': //UCS-2LE
 			$_encode = 'UCS-2LE';
 			break;
+		case 'ucs-4': //UCS-4 现阶段ucs-4 == urf-32
+		case 'iso-10646-ucs-4': //ISO-10646-UCS-4
+		case 'ucs4': //UCS4
 		case 'utf-32': //UTF-32
 		case 'utf32': //utf32
 			$_encode = 'UTF-32';
 			break;
+		case 'ucs-4be': //UCS-4BE
+		case 'ucs4be': //UCS-4BE
 		case 'utf-32be': //UTF-32BE
 		case 'utf32be': //UTF-32BE
 			$_encode = 'UTF-32BE';
@@ -452,6 +755,10 @@ function encoding_aliases($encode)
 		case 'utf32le': //UTF-32LE
 			$_encode = 'UTF-32LE';
 			break;
+		case 'ucs-2': //UCS-2 ucs-2是utf-16的子集
+		case 'iso-10646-ucs-2': //ISO-10646-UCS-2
+		case 'ucs2': //UCS2
+		case 'unicode': //UNICODE
 		case 'utf-16': //UTF-16
 		case 'utf16': //utf16
 			$_encode = 'UTF-16';
@@ -785,64 +1092,94 @@ function encoding_aliases($encode)
 }
 }
 
+if (! function_exists('substr_ansi')) {
 /**
  * 按非ascii字符占有几个字宽的方式切分字符串，并且不会将汉字切成半个
- * 所谓字宽是指,使用默认字体显示时，非ascii字符相比英文字符所占大小，比如：宋体、微软雅黑中，汉字占两个宽度
+ *
+ * 以下是substr和array_slice的用法
+ * 如果 start 是非负数，返回的字符串将从 string 的 start 位置开始，从 0 开始计算。例如，在字符串 "abcdef" 中，在位置 0 的字符是 "a"，位置 2 的字符串是 "c" 等等。
+ * 如果 start 是负数，返回的字符串将从 string 结尾处向前数第 start 个字符开始。
+ * 如果 string 的长度小于 start，将返回 false。
+ *
+ * 如果提供了正数的 length，返回的字符串将从 start 处开始最多包括 length 个字符（取决于 string 的长度）。
+ * 如果提供了负数的 length，那么 string 末尾处的 length 个字符将会被省略（若 start 是负数则从字符串尾部算起）。如果 start 不在这段文本中，那么将返回 false。
+ * 如果提供了值为 0，false 的 length，那么将返回一个空字符串。
+ * 如果 length 为 null（原文中规则是没有提供length这个参数，但是因为后面还有参数，所以以null表示这个方案），返回的子字符串将从 start 位置开始直到字符串结尾。
+
+ *
+ * 所谓字宽是指，使用某字体显示时，非ascii字符相比英文字符所占大小，比如：宋体、微软雅黑中，汉字占两个宽度
  * @example $ansi_width = 2 表示汉字等非英文字符按照两个字宽长度
  * @example $ansi_width = 1 表示所有字符按一个字宽长度
  *
  * @param string $string 原始字符
- * @param integer $offset 开始偏移,使用方法和substr一样,可以为负数
- * @param integer $length 长度,使用方法和substr一样,可以为负数
- * @param string $charset utf-8 or ansi
+ * @param integer $start 开始偏移，使用方法和substr一样，可以为负数
+ * @param integer $length 长度，使用方法和substr一样，可以为负数
+ * @param string $charset utf-8 or ansi(也就是gbk之类的)
  * @param integer $ansi_width 汉字等非英文字符按照几个字符来处理
  * @return string 返回裁减的字符串
  */
-if (! function_exists('substr_ansi')) {
-function substr_ansi($string, $offset, $length = 0, $charset = 'utf-8', $ansi_width = 1)
+function substr_ansi(string $string, int $start, int $length = null, string $charset = 'UTF-8', int $ansi_width = 1)
 {
-	if (empty($string)) return FALSE;
+	if (!is_null($length) && empty($length)) return ''; // 返回空字符串
+
 	$data = str_split_any($string, $charset);
 
-	$as = $_as = array();
-	$_start = $_end = 0;
+	$count = count($data);
+	$table = [];
+	foreach($data as $v)
+		$table[] = strlen($v) > 1 ? $ansi_width : 1;
 
-	foreach($data as $k => $v)
-		$as[$k] = strlen($v) > 1 ? $ansi_width : 1;
+	if (is_null($length)) $length = $count;
 
-	$_as_rev = array_reverse($as,true);
-	$_as = $offset < 0 ? $_as_rev : $as;
-	$n = 0; $_offset = abs($offset);
-	foreach($_as as $k => $v) {
-		if ($n >= $_offset) {
-			$_start = $k;
-			break;
+	$startIndex = _get_substr_ansi_pos($table, 0, $start);
+
+	if ($startIndex < 0) $startIndex = 0; //substr('abc', -5, 1) == 'a'
+	else if ($startIndex > $count) return false; // substr('abc', 4, 1) == false
+
+	$endIndex = _get_substr_ansi_pos($table, $startIndex, $length);
+
+	if ($endIndex > $count) $endIndex = $count; // substr('abc', 0, 5) == 'abc'
+	else if ($endIndex < 0) return false; // substr('abc', 0, -5) == false
+	else if ($endIndex < $startIndex) return false; // substr('abc', 2, -3) == false;
+
+	return implode('', array_slice($data, $startIndex, $endIndex - $startIndex));
+}
+// substr_ansi 私有函数，用于计算起始点
+function _get_substr_ansi_pos(array $table, int $startIndex, int $len)
+{
+	$realWidth = $i = 0;
+
+	if ($len == 0)
+	{
+		return $startIndex;
+	} else if ($len > 0) {
+		for($i = $startIndex; $i < count($table); $i++)
+		{
+			$realWidth += $table[$i];;
+			if ($realWidth >= $len)
+				return $i + 1;
 		}
-		$n += $v;
-	}
-	//echo $_start,',';
-	$_as = $length <= 0 ? $_as_rev : $as;
-	end($_as); list($_end) = each($_as); reset($_as);//给$_end 设定默认值，一直到结尾
-	$n = 0; $_length = abs($length);
-	foreach($_as as $k => $v) {
-		if ($k >= $_start) {
-			if ($n >= $_length) {
-				$_end = $k + ($length <= 0 ? 1 : 0);
-				break;
-			}
-			$n += $v;
+		// $len超出总宽
+		return count($table);
+
+	} else {
+		$len = abs($len);
+
+		for($i = count($table) - 1; $i >= $startIndex ; $i--)
+		{
+			$realWidth += $table[$i];
+
+			if ($realWidth >= $len)
+				return $i;
 		}
+
+		return -1;
 	}
-	//echo $_end,'|||||';
-	if ($_end <= $_start)
-		return '';
 
-	$_data = array_slice($data, $_start, $_end - $_start);
-
-	return implode('',$_data);
 }
 }
 
+if (! function_exists('strlen_ansi')) {
 /**
  * 按非ascii字符占有几个字宽的方式计算字符串长度
  * @example $ansi_width = 2 表示汉字等非英文字符按照两个字宽长度
@@ -853,117 +1190,28 @@ function substr_ansi($string, $offset, $length = 0, $charset = 'utf-8', $ansi_wi
  * @param integer $ansi_width 汉字等非英文字符按照几个字宽来处理
  * @return string 返回字符串长度
  */
-if (! function_exists('strlen_ansi')) {
-function strlen_ansi($string, $charset, $ansi_width = 1)
+function strlen_ansi(string $string, string $charset = 'UTF-8', $ansi_width = 1)
 {
-	if (empty($string)) return 0;
+	if (empty($string) && !is_numeric($string)) return 0;
+
 	$data = str_split_any($string, $charset);
 
+	// ascii 肯定会在1bytes内
 	$as = 0;
 	foreach($data as $k => $v)
 		$as += strlen($v) > 1 ? $ansi_width : 1;
-	unset($data);
+
 	return $as;
 }
 }
 
-/**
- * 裁剪字符串(兼容utf8)
- *
- * @param string $string 输入字符串
- * @param integer $offset 开始裁减的索引(双字节方式)
- * @param integer $length 需要裁减的长度(双字节方式)
- * @param string $charset utf-8 or ansi
- * @param string $dot 裁减之后的字符串末尾补码
- * @return string 输出裁减之后的字符串
- */
-if (! function_exists('cutstr')) {
-function cutstr($string, $offset, $length, $charset = 'UTF-8') //裁剪字符
-{
-
-	if(strlen($string) <= $length) {
-		return $string;
-	}
-
-	$string = str_replace(array('&amp;', '&quot;', '&lt;', '&gt;'), array('&', '"', '<', '>'), $string); //还原html转义符
-
-	$strcut = '';
-
-	$n = $tn = $noc = 0;
-	$offset_n = $offset_tn = $offset_noc = 0;
-	if(strtolower($charset) == 'utf-8') {
-		while($n < strlen($string)) {
-			$t = ord($string[$n]);
-			if($t == 9 || $t == 10 || (32 <= $t && $t <= 126)) { //可见字符
-				$tn = 1; $n++; $noc++;
-			} elseif(194 <= $t && $t <= 223) {
-				$tn = 2; $n += 2; $noc += 2;
-			} elseif(224 <= $t && $t < 239) {
-				$tn = 3; $n += 3; $noc += 2;
-			} elseif(240 <= $t && $t <= 247) {
-				$tn = 4; $n += 4; $noc += 2;
-			} elseif(248 <= $t && $t <= 251) {
-				$tn = 5; $n += 5; $noc += 2;
-			} elseif($t == 252 || $t == 253) {
-				$tn = 6; $n += 6; $noc += 2;
-			} else {
-				$n++;
-			}
-
-			if ($noc >= $offset && $offset_n == 0) {
-				$offset_n = $n;
-				$offset_tn = $tn;
-				$offset_noc = $noc;
-			}
-
-			if($noc >= $offset + $length) {
-				break;
-			}
-		}
-	} else {
-
-		while ($n < strlen($string))
-		{
-			$t = ord($string[$n]);
-
-			if ($t > 127) {
-				$tn = 2; $n += 2; $noc += 2;
-			} else {
-				$tn = 1; $n++; $noc++;
-			}
-			if ($noc >= $offset && $offset_n == 0) {
-
-				$offset_n = $n;
-				$offset_tn = $tn;
-				$offset_noc = $noc;
-			}
-			if($noc >= $offset + $length) {
-				break;
-			}
-		}
-	}
-	if($offset_noc > $offset) {
-		$offset_n -= $offset_tn;
-	}
-	if($noc > $offset + $length) {
-		$n -= $tn;
-	}
-
-	$strcut = substr($string, $offset_n, $n - $offset_n);
-
-	$strcut = str_replace(array('&', '"', '<', '>'), array('&amp;', '&quot;', '&lt;', '&gt;'), $strcut);
-
-	return $strcut;
-}
-}
-
+if (! function_exists('removeBOM')) {
 /**
  * 移除字符串的BOM
  *
  * @param  string $str 输入字符串
  * @return string 输出字符串
  */
-if (! function_exists('removeBOM')) {
 function removeBOM($str)
 {
 	$str_2 = substr($str, 0, 2);
@@ -979,13 +1227,14 @@ function removeBOM($str)
 }
 }
 
+if (! function_exists('addBOM')) {
 /**
  * 添加字符串的BOM
+ * https://zh.wikipedia.org/wiki/%E4%BD%8D%E5%85%83%E7%B5%84%E9%A0%86%E5%BA%8F%E8%A8%98%E8%99%9F
  *
  * @param  string $str 输入字符串
  * @return string 输出字符串
  */
-if (! function_exists('addBOM')) {
 function addBOM($str, $encode = 'UTF-8')
 {
 	$encode = encoding_aliases($encode);
@@ -995,102 +1244,69 @@ function addBOM($str, $encode = 'UTF-8')
 		case 'UTF-8-Mobile#KDDI-A':
 		case 'UTF-8-Mobile#KDDI-B':
 		case 'UTF-8-Mobile#SOFTBANK':
-			$bom = pack('CCC',0xef,0xbb,0xbf);
-			return substr($str, 0,3) != $bom ? $bom.$str : $str;
+			$bom = pack('CCC',0xef, 0xbb, 0xbf);
+			return substr($str, 0, 3) != $bom ? $bom.$str : $str;
 		case 'UTF-16':
 		case 'UCS-2':
 		case 'UCS-2BE':
 		case 'UTF-16BE':
-			$bom = pack('CC',0xfe,0xff);
-			return substr($str, 0,2) != $bom ? $bom.$str : $str;
+			$bom = pack('CC',0xfe, 0xff);
+			return substr($str, 0, 2) != $bom ? $bom.$str : $str;
 		case 'UTF-16LE':
 		case 'UCS-2LE':
-			$bom = pack('CC',0xff,0xfe);
-			return substr($str, 0,2) != $bom ? $bom.$str : $str;
+			$bom = pack('CC',0xff, 0xfe);
+			return substr($str, 0, 2) != $bom ? $bom.$str : $str;
 		case 'UTF-32':
 		case 'UCS-4':
 		case 'UTF-32BE':
 		case 'UCS-4BE':
 			$bom = pack('CCCC',0x00,0x00,0xfe,0xff);
-			return substr($str, 0,4) != $bom ? $bom.$str : $str;
+			return substr($str, 0, 4) != $bom ? $bom.$str : $str;
 		case 'UTF-32LE':
 		case 'UCS-4LE':
-			$bom = pack('CCCC',0xff,0xfe,0x00,0x00);
-			return substr($str, 0,4) != $bom ? $bom.$str : $str;
+			$bom = pack('CCCC',0xff, 0xfe, 0x00, 0x00);
+			return substr($str, 0, 4) != $bom ? $bom.$str : $str;
 	}
 	return $str;
 }
 }
 
-/**
- * 将Unicode 转化为 UTF-8 
- * 无特殊情况请使用 iconv('ucs-2', 'utf-8', $str);
- * https://github.com/mathiasbynens/utf8.js/blob/master/utf8.js
- * 
- * @param  string $str
- * @return string 
- */
-if (! function_exists('ucs2_utf8')) {
-function ucs2_utf8($str)
-{
-	$list = str_split_ucs2($str);
-	$result = '';
-	foreach ($list as $v)
-		$result .= ucs2_code_to_utf8($v);
-	return $result;
-}
-}
 
-/**
- * 将UTF-8 转化为 Unicode
- * 无特殊情况请使用 iconv( 'utf-8', 'ucs-2', $str);
- * 
- * @param  string $str
- * @return string 
- */
-if (! function_exists('utf8_ucs2')) {
-function utf8_ucs2($str)
-{
-
-}
-}
-
-
+if (! function_exists('anystring2utf8')) {
 /**
  * 任意编码的字符串转为UTF-8(non BOM)，支持一些常见东方语言
  *
  * @param string $str 输入字符串
  * @return string 输出字符串
  */
-if (! function_exists('anystring2utf8')) {
 function anystring2utf8($str)
 {
-	$encode = mb_detect_encoding($str,'ASCII,UCS-2,UTF-8,CP936,BIG-5,EUC-TW,EUC-KR,auto');
+	$encode = mb_detect_encoding($str,'ASCII,UTF-16,UTF-8,CP936,BIG-5,EUC-TW,EUC-KR,auto');
 	return removeBOM(!in_array($encode, array('UTF-8', 'ASCII')) ? iconv($encode,'UTF-8//IGNORE',$str) : $str); //移除BOM的UTF-8
 }
 }
 
+if (! function_exists('anystring2gbk')) {
 /**
  * 任意编码的字符串转为GBK，支持一些常见东方语言
  *
  * @param string $str 输入字符串
  * @return string 输出字符串
  */
-if (! function_exists('anystring2gbk')) {
 function anystring2gbk($str)
 {
-	$encode = mb_detect_encoding($str,'ASCII,UCS-2,UTF-8,CP936,BIG-5,EUC-TW,EUC-KR,auto');
+	$encode = mb_detect_encoding($str,'ASCII,UTF-16,UTF-8,CP936,BIG-5,EUC-TW,EUC-KR,auto');
 	return (!in_array($encode, array('CP936', 'ASCII')) ? iconv($encode,'GB18030//TRANSLIT',$str) : $str);
 }
 }
 
+if (! function_exists('any2utf8')) {
 /**
  * 任何编码字符串(数组)转换为utf-8
  *
  * @param mixed $string 输入字符串(数组)
  * @return mixed 输出utf-8编码字符串(数组)
  */
-if (! function_exists('any2utf8')) {
 function any2utf8($string) //通过递归转换字符串编码
 {
 	if(is_array($string))
@@ -1108,13 +1324,13 @@ function any2utf8($string) //通过递归转换字符串编码
 }
 }
 
+if (! function_exists('any2gbk')) {
 /**
  * 任何编码字符串(数组)转换为gbk
  *
  * @param mixed $string 输入字符串(数组)
  * @return mixed 输出gbk编码字符串(数组)
  */
-if (! function_exists('any2gbk')) {
 function any2gbk($string) //通过递归转换字符串编码
 {
 	if(is_array($string))
@@ -1132,12 +1348,12 @@ function any2gbk($string) //通过递归转换字符串编码
 }
 }
 
+if (! function_exists('guid')) {
 /**
  * 获取GUID
  *
  * @return string
  */
-if (! function_exists('guid')) {
 function guid()
 {
 	if (function_exists('com_create_guid'))
@@ -1161,13 +1377,13 @@ function guid()
 }
 }
 
+if (! function_exists('nohtml')) {
 /**
  * 去掉字符串中的HTML标签
  *
  * @param string $string 输入字符串
  * @return string 返回结果
  */
-if (! function_exists('nohtml')) {
 function nohtml($string)
 {
   $string = preg_replace("'<script[^>]*?>.*?</script>'si", "", $string);  //去掉javascript
@@ -1184,13 +1400,13 @@ function nohtml($string)
 }
 }
 
+if (! function_exists('noscript')) {
 /**
  * 去掉字符串中的Script/Style标签和onload/on...等方法
  *
  * @param string $string 输入字符串
  * @return string 返回结果
  */
-if (! function_exists('noscript')) {
 function noscript($string)
 {
 	$string = preg_replace("'<script[^>]*?>.*?</script>'si", "", $string);  //去掉javascript
@@ -1230,13 +1446,13 @@ function noscript($string)
 }
 }
 
+if (! function_exists('xml_encode')) {
 /**
  * 将数组转换为XML
  *
  * @param  array $data 输入数组
  * @return string       输出XML字符串
  */
-if (! function_exists('xml_encode')) {
 function xml_encode($data, $charset = 'UTF-8')
 {
 	$xml = '<?xml version="1.0" encoding="'.$charset.'"?><catalog>';
@@ -1245,9 +1461,8 @@ function xml_encode($data, $charset = 'UTF-8')
 	$xml .= '</catalog>';
 	return $xml;
 }
-}
 
-if (! function_exists('_xml_encode')) {
+// xml_encode的私有函数
 function _xml_encode(&$data)
 {
 	$xml = '';
@@ -1265,6 +1480,7 @@ function _xml_encode(&$data)
 }
 }
 
+if (! function_exists('csv_encode')) {
 /**
  * 将数组转换为csv(Windows)
  *
@@ -1272,10 +1488,9 @@ function _xml_encode(&$data)
  * @param  array $header 标题栏，默认去读取数组的KEY
  * @return string       输出csv字符串
  */
-if (! function_exists('csv_encode')) {
-function csv_encode($data, $header = array())
+function csv_encode($data, $header = [])
 {
-	if (empty($data)) return FALSE;
+	if (empty($data)) return false;
 
 	$_data = array_values($data);
 	$_header = empty($header) && is_array($_data[0]) && is_assoc($_data[0]) ? array_keys($_data[0]) : $header;
@@ -1293,17 +1508,17 @@ function csv_encode($data, $header = array())
 }
 }
 
+if (! function_exists('isNaW')) {
 /**
  * 判断字符是否非英文字符/符号 is not a word
  *
  * @param    $str 输入字符串或字
  * @return boolean      输出是否非英文字符/符号
  */
-if (! function_exists('isNaW')) {
 function isNaW($str)
 {
 	return preg_match('/[\\x{7F}-\\x{FF}]/', $str);
-	/*for ( $i = 0; $i < strlen($str);++$i ){
+/*for ( $i = 0; $i < strlen($str);++$i ){
 		$value = ord($str[$i]);
 		if($value > 127){
 			return true;
@@ -1313,56 +1528,81 @@ function isNaW($str)
 }
 }
 
+if (! function_exists('zend_strtr')) {
 /**
- * PHP内置的strtr函数
+ * PHP内置的strtr函数，优先匹配最长的词
  *
  * @param  string $str         输入字符串
  * @param  array $replace_arr  需要替换的数组结构
  * @return string              替换之后的字符串
  */
-if (! function_exists('zend_strtr')) {
-function zend_strtr(&$str, &$replace_arr) {
-	$maxlen = 0;$minlen = 1024*128;
+function zend_strtr(string $str, array $replace_arr) {
+
+	$maxlen = 0;
+	$minlen = 1024 * 128;
+
 	if (empty($replace_arr)) return $str;
+
+	// 查找最长最对的待替换词
 	foreach($replace_arr as $k => $v) {
 		$len = strlen($k);
 		if ($len < 1) continue;
 		if ($len > $maxlen) $maxlen = $len;
 		if ($len < $minlen) $minlen = $len;
 	}
+
 	$len = strlen($str);
-	$pos = 0;$result = '';
+	$pos = 0;
+	$result = '';
+
 	while ($pos < $len) {
-		if ($pos + $maxlen > $len) $maxlen = $len - $pos;
-		$found = false;$key = '';
-		for($i = 0;$i<$maxlen;++$i) $key .= $str[$i+$pos];
-		for($i = $maxlen;$i >= $minlen;--$i) {
+
+		// 在每次循环中重置maxlen
+		if ($pos + $maxlen > $len)
+			$maxlen = $len - $pos;
+
+		$found = false;
+		$key = ''; // 最长待检索原文
+
+		// 按照maxlen取原文的区间
+		for($i = 0; $i < $maxlen; ++$i)
+			$key .= $str[$i + $pos];
+
+		// 从maxlen 到 minlen，依次检查substr($key, 0, $i)是否存在$replace_arr中
+		for($i = $maxlen; $i >= $minlen; --$i) {
+
 			$key1 = substr($key, 0, $i);
+
 			if (isset($replace_arr[$key1])) {
+
 				$result .= $replace_arr[$key1];
 				$pos += $i;
 				$found = true;
+
 				break;
 			}
 		}
+
+		// 没有匹配到，累加当前$pos的字符
 		if(!$found) $result .= $str[$pos++];
 	}
+
 	return $result;
 }
 }
 
+if (! function_exists('parse_dataurl')) {
 /**
  * 解析dataURL的每一部分为数组
  *
  * @param  string $dataurl 数据
  * @return array
  */
-if (! function_exists('parse_dataurl')) {
 function parse_dataurl($dataurl)
 {
 	//data:[<mediatype>][;base64],<data>
 	//mediatype默认值为text/plain;charset=US-ASCII
-	$matches = array();
+	$matches = [];
 	preg_match('@^(data:)(?<mime>(.[^/]*/.*?))?(;charset=(?<charset>.[^;]*))?(?<encode>;base64)?,(?<data>.*)$@', $dataurl, $matches);
 	$mime = !empty($matches['mime']) ? $matches['mime'] : 'text/plain';
 	$charset = $matches['charset'];
@@ -1373,6 +1613,7 @@ function parse_dataurl($dataurl)
 }
 }
 
+if (! function_exists('__r')) {
 /**
  * Make the place-holder replacements on a line.
  *
@@ -1380,8 +1621,7 @@ function parse_dataurl($dataurl)
  * @param  array   $replace
  * @return string
  */
-if (! function_exists('__')) {
-function __($line, array $replace)
+function __r(string $line, array $replace)
 {
 	$replace = array_keyflatten($replace, '.', ':');
 	ksort($replace);
@@ -1390,6 +1630,7 @@ function __($line, array $replace)
 }
 }
 
+if (! function_exists('hex_dump')) {
 /**
 * Dumps a string into a traditional hex dump for programmers,
 * in a format similar to the output of the BSD command hexdump -C file.
@@ -1405,13 +1646,12 @@ function __($line, array $replace)
 * @param array $options
 * @param string|array
 */
-if (! function_exists('hex_dump')) {
 function hex_dump($string, array $options = null) {
     if (!is_scalar($string)) {
         throw new InvalidArgumentException('$string argument must be a string');
     }
     if (!is_array($options)) {
-        $options = array();
+        $options = [];
     }
     $line_sep       = isset($options['line_sep'])   ? $options['line_sep']          : "\n";
     $bytes_per_line = @$options['bytes_per_line']   ? $options['bytes_per_line']    : 16;
@@ -1421,17 +1661,17 @@ function hex_dump($string, array $options = null) {
     $hex_lines  = str_split(bin2hex($string), $bytes_per_line * 2);
 
     $offset = 0;
-    $output = array();
+    $output = [];
     $bytes_per_line_div_2 = (int)($bytes_per_line / 2);
     foreach ($hex_lines as $i => $hex_line) {
         $text_line = $text_lines[$i];
         $output []=
-            sprintf('%08X',$offset) . '  ' .
+            sprintf('%08X', $offset) . '  ' .
             str_pad(
                 strlen($text_line) > $bytes_per_line_div_2
                 ?
-                    implode(' ', str_split(substr($hex_line,0,$bytes_per_line),2)) . '  ' .
-                    implode(' ', str_split(substr($hex_line,$bytes_per_line),2))
+                    implode(' ', str_split(substr($hex_line, 0, $bytes_per_line), 2)) . '  ' .
+                    implode(' ', str_split(substr($hex_line, $bytes_per_line), 2))
                 :
                 implode(' ', str_split($hex_line,2))
             , $bytes_per_line * 3) .
@@ -1445,14 +1685,40 @@ function hex_dump($string, array $options = null) {
 
 if (! function_exists('base64_urlencode'))
 {
-	function base64_urlencode($data) {
-		return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
-	}
+/**
+ * 对URL友好的base64_decode
+ *
+ * @param  string $data
+ * @return [type]
+ */
+function base64_urlencode(string $data) {
+	return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+}
 }
 
 if (! function_exists('base64_urldecode'))
 {
-	function base64_urldecode($data) {
-		return base64_decode(str_pad(strtr($data, '-_', '+/'), strlen($data) % 4, '=', STR_PAD_RIGHT));
+/**
+ * 对URL友好的base64_encode
+ *
+ * @param  string $data
+ * @return [type]
+ */
+function base64_urldecode(string $data) {
+	return base64_decode(str_pad(strtr($data, '-_', '+/'), strlen($data) % 4, '=', STR_PAD_RIGHT));
+}
+}
+
+if (! function_exists('dd_r'))
+{
+function dd_r($args, $output = null, string $mode = null)
+{
+	if (class_exists(\Symfony\Component\VarDumper\Dumper\CliDumper::class)) {
+		$dumper = in_array(is_null($mode) ? PHP_SAPI : $mode, ['cli', 'phpdbg']) ? new \Symfony\Component\VarDumper\Dumper\CliDumper : new \Illuminate\Support\Debug\HtmlDumper;
+
+		return $dumper->dump((new \Symfony\Component\VarDumper\Cloner\VarCloner)->cloneVar($args), $output);
+	} else {
+		return print_r($args, $output);
 	}
+}
 }
